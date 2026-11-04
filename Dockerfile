@@ -1,4 +1,4 @@
-FROM startown/madgraph:3.5.17@sha256:2a5961f55907bd10036dda011d711cde8e49507553986d94e09d95164f34410c
+FROM startown/madgraph:3.8.1@sha256:cd4a4e37420b0dcbcb948e1155aac8672282e6b482d58341f5101c8f8e974cec
 
 WORKDIR /opt/serverless
 COPY pyproject.toml uv.lock ./
