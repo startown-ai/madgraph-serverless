@@ -1,102 +1,93 @@
 # MadGraph Serverless
 
-![madgraph-serverless image size](https://img.shields.io/docker/image-size/startown/madgraph-serverless/0.1.0?arch=amd64&logo=docker&label=madgraph-serverless&style=flat-square)
+[![Docker Hub](https://img.shields.io/docker/v/startown/madgraph-serverless?sort=semver&label=docker%20hub&logo=docker&logoColor=white&style=flat-square)](https://hub.docker.com/r/startown/madgraph-serverless) [![Image size](https://img.shields.io/docker/image-size/startown/madgraph-serverless/0.1.0?label=size&style=flat-square)](https://hub.docker.com/r/startown/madgraph-serverless/tags) [![License](https://img.shields.io/github/license/startown-ai/madgraph-serverless?style=flat-square)](LICENSE)
 
-Run MadGraph5_aMC@NLO on Runpod Serverless with a simple HTTP request.
+[MadGraph5_aMC@NLO](https://github.com/mg5amcnlo/mg5amcnlo) with [Pythia](https://pythia.org) and [Delphes](https://github.com/delphes/delphes) on Runpod Serverless, one HTTP request per run.
 
-MadGraph5_aMC@NLO is a widely used tool in high-energy physics (HEP) for simulating particle collisions. Setting up its runtime environment -- Pythia, Delphes, LHAPDF, ROOT, and others -- can be tricky. Once running, individual simulations are CPU-intensive, long-running, and use a lot of disk space.
+It adds a Runpod handler to [`startown/madgraph:3.8.1-7`](https://github.com/startown-ai/madgraph), which bundles Pythia, Delphes, LHAPDF, FastJet, eMELA, and ROOT.
 
-This project adds a Runpod handler to [`startown/madgraph:3.5.17`](https://github.com/startown-ai/madgraph) -- MadGraph 3.5.17 with Pythia 8.317, Delphes 3.5.1, ROOT, FastJet, LHAPDF, and eMELA -- and publishes it as `startown/madgraph-serverless:0.1.0` (amd64). You submit a run via an HTTP request with the same commands you'd enter in MadGraph, pay only for the compute you use, and run many simulations in parallel without managing infrastructure.
+## Installation
 
-## Deploy on Runpod Serverless
+In the Runpod console, go to [Serverless](https://console.runpod.io/serverless), click [New endpoint](https://console.runpod.io/serverless/new-endpoint), and choose **Deploy from a Docker image** with these settings:
 
-### 1. Create the endpoint
+| Setting           | Value                                 |
+| ----------------- | ------------------------------------- |
+| Container image   | `startown/madgraph-serverless:0.1.0`  |
+| Container disk    | 100 GB                                |
+| Worker type       | CPU, 5 GHz Compute Optimized, 32 vCPU |
+| FlashBoot         | on                                    |
+| Execution timeout | off                                   |
 
-From the Runpod console, go to **[Serverless](https://console.runpod.io/serverless)** and click **[New endpoint](https://console.runpod.io/serverless/new-endpoint)**. Select **Deploy from a Docker image**.
+Add these environment variables, so the worker can upload its results to S3-compatible storage such as Cloudflare R2:
 
-In **Container Name**, enter `startown/madgraph-serverless:0.1.0`. Under **Container configuration**, set the container disk to **100 GB**. Then, under **Environment variables**, add these four so the worker can upload its output to S3-compatible storage (e.g. Cloudflare R2):
+| Variable            | Value                                                          |
+| ------------------- | -------------------------------------------------------------- |
+| `ENDPOINT`          | storage endpoint URL                                           |
+| `ACCESS_KEY_ID`     | access key ID                                                  |
+| `SECRET_ACCESS_KEY` | secret access key                                              |
+| `BUCKET`            | bucket name, optionally with a folder, e.g. `my-bucket/runpod` |
 
-- `ENDPOINT` -- your storage endpoint URL
-- `ACCESS_KEY_ID` -- your access key ID
-- `SECRET_ACCESS_KEY` -- your secret access key
-- `BUCKET` -- the bucket name, optionally followed by a folder (e.g. `my-bucket/runpod`)
+A worker missing any of them stops at startup, before it takes a job.
 
-> **All four are required.** A worker missing any of them stops at startup, before it takes a job.
+Once the endpoint shows **Ready**, it takes runs. Each run fully occupies a worker, so under **Manage > Edit endpoint**, scale by **Request count** with 1 request per worker.
 
-Click **Next**. Name the endpoint, then choose **CPU**, **5 GHz Compute Optimized**, **32 vCPU**. Enable **FlashBoot**, disable **Execution Timeout**, and click **Deploy**.
+## Usage
 
-### 2. Wait for workers
-
-Workers will initialize and pull the Docker image. Once the status shows **Ready**, the endpoint is live.
-
-### 3. Configure auto-scaling (optional)
-
-Click **Manage > Edit endpoint** to adjust the auto-scaling strategy. **Request count** with 1 request per worker works well for MadGraph since each simulation fully occupies a worker.
-
-### 4. Submit a run
-
-**Via the console:** Go to the **Requests** tab, paste your request body, and click **Run**. The request enters the queue and is picked up by an available worker.
-
-**Via the API:** You can submit runs programmatically using the Runpod REST API. Replace `{endpoint_id}` and `{api_key}` with your values from the Runpod console.
+Submit a run:
 
 ```bash
-curl -X POST "https://api.runpod.io/v2/{endpoint_id}/run" \
+curl -X POST "https://api.runpod.ai/v2/{endpoint_id}/run" \
   -H "Authorization: Bearer {api_key}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "input": {
-      "commands": [
-        "generate p p > w+ w-, w+ > j j, w- > j j",
-        "output WWToJJJJ_pp-13TeV_madgraph-pythia8-delphes_1k_s1",
-        "launch",
-        "shower=pythia8",
-        "detector=delphes",
-        "done",
-        "set iseed 1",
-        "set ebeam 6500",
-        "set nevents 1000",
-        "add pythia8_card Random:setSeed = on",
-        "add pythia8_card Random:seed = 1",
-        "add delphes_card --line_position=0 set RandomSeed 1",
-        "done"
-      ]
-    }
-  }'
+  -d @request.json
 ```
 
-The seed is set in all three stages -- `iseed` for MadGraph, `Random:seed` for Pythia, and `RandomSeed` for Delphes -- so the whole chain is reproducible, not only the parton-level events. Use seeds of 1 or more: with 0, each program picks its own random seed. Without the two `Random:` lines, Pythia uses the same built-in seed in every run.
+The request holds the commands you'd enter in MadGraph. For example, this `request.json` generates 1,000 top-quark pairs with parton shower and detector simulation. The fixed core count and random seed make it reproducible:
 
-You can submit multiple requests at once -- each one runs on a separate worker in parallel. Give each request its own random seed in all three stages (consecutive seeds 1, 2, 3, ... give independent runs), and put the seed in the output name. Requests with the same seed generate identical events, and requests with the same output name overwrite each other in your storage bucket. Only these lines change between requests:
-
+```json
+{
+  "input": {
+    "commands": [
+      "set nb_core 32",
+      "generate p p > t t~",
+      "output pp2tt",
+      "launch",
+      "shower=Pythia8",
+      "detector=Delphes",
+      "done",
+      "set nevents 1000",
+      "set iseed 1",
+      "set HEPMCoutput:file hepmc.gz",
+      "done"
+    ]
+  }
+}
 ```
-# request 1
-"output WWToJJJJ_pp-13TeV_madgraph-pythia8-delphes_1k_s1",
-"set iseed 1",
-"add pythia8_card Random:seed = 1",
-"add delphes_card --line_position=0 set RandomSeed 1",
 
-# request 2
-"output WWToJJJJ_pp-13TeV_madgraph-pythia8-delphes_1k_s2",
-"set iseed 2",
-"add pythia8_card Random:seed = 2",
-"add delphes_card --line_position=0 set RandomSeed 2",
-```
+Each request runs on its own worker. To run several in parallel, give each its own seed and output name, such as `pp2tt-s2` with seed 2. Requests with the same seed give identical events, and requests with the same output name overwrite each other's results.
 
-> **Runs longer than a day:** Runpod removes a job 24 hours after it is submitted by default, even while it is still running. For longer runs, add `"policy": {"ttl": <milliseconds>}` next to `"input"` in the request body (up to 7 days).
+Runpod removes a job 24 hours after it is submitted, even while it is still running. For longer runs, add `"policy": {"ttl": <milliseconds>}` next to `"input"`, up to 7 days.
 
-### 5. Get your results
-
-When a run completes, the whole MadGraph output directory is uploaded as `{BUCKET}/{name}.tar`, where `{name}` is the name given to the `output` command (the event files inside are already compressed). The events are under `Events/run_01/`:
-
-- `unweighted_events.lhe.gz` -- parton-level events from MadGraph
-- `tag_1_pythia8_events.hepmc.gz` -- showered events from Pythia, with `shower=pythia8`
-- `tag_1_delphes_events.root` -- reconstructed events from Delphes, with `detector=delphes`
-
-**Via the console:** Open the request on the **Requests** tab to see its status and output.
-
-**Via the API:** Submitting with `/run` returns a job `id` right away. Use it to check the job's status; once it shows `COMPLETED`, the `output` field holds `{"output_path": "{BUCKET}/{name}.tar"}`.
+Check a run with the job `id` that `/run` returns:
 
 ```bash
-curl "https://api.runpod.io/v2/{endpoint_id}/status/{job_id}" \
+curl "https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}" \
   -H "Authorization: Bearer {api_key}"
 ```
+
+Once it shows `COMPLETED`, its `output` holds `{"output_path": "{BUCKET}/{name}.tar"}`, where `{name}` is the `output` name. The tar holds the whole output directory, and the results are in `{name}/Events/run_01/`:
+
+| File                            | Contents                           |
+| ------------------------------- | ---------------------------------- |
+| `run_01_tag_1_banner.txt`       | every card and setting of the run  |
+| `unweighted_events.lhe.gz`      | parton-level events                |
+| `tag_1_pythia8_events.hepmc.gz` | particle-level events from Pythia  |
+| `tag_1_delphes_events.root`     | detector-level events from Delphes |
+
+This image defaults to `HEPMCoutput:file autoremove`, unlike MadGraph's `hepmc.gz`. In MadGraph, this setting deletes the HepMC file at the end of the run; with [`startown/madgraph`](https://github.com/startown-ai/madgraph)'s patches, it runs Delphes inside each Pythia job instead, so no HepMC is written.
+
+You can also submit and follow runs on the endpoint's **Requests** tab in the console.
+
+## License
+
+This repository is licensed under the [Apache License 2.0](LICENSE). The packages it builds on keep their own licenses: see [`startown/madgraph`](https://github.com/startown-ai/madgraph#license) for MadGraph and the tools it bundles.
