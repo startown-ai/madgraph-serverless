@@ -12,7 +12,7 @@
 
 [MadGraph5_aMC@NLO](https://github.com/mg5amcnlo/mg5amcnlo) with [Pythia](https://pythia.org) and [Delphes](https://github.com/delphes/delphes) on Runpod Serverless, one HTTP request per run.
 
-It adds a Runpod handler to [`startown/madgraph:3.8.1-7`](https://github.com/startown-ai/madgraph), which bundles Pythia, Delphes, LHAPDF, FastJet, eMELA, and ROOT.
+It adds a Runpod handler to [`startown/madgraph:3.8.1-8`](https://github.com/startown-ai/madgraph), which bundles Pythia, Delphes, LHAPDF, FastJet, eMELA, and ROOT.
 
 ## Installation
 
@@ -20,7 +20,7 @@ In the Runpod console, go to [Serverless](https://console.runpod.io/serverless),
 
 | Setting           | Value                                 |
 | ----------------- | ------------------------------------- |
-| Container image   | `startown/madgraph-serverless:0.1.0`  |
+| Container image   | `startown/madgraph-serverless:0.1.1`  |
 | Container disk    | 100 GB                                |
 | Worker type       | CPU, 5 GHz Compute Optimized, 32 vCPU |
 | FlashBoot         | on                                    |
